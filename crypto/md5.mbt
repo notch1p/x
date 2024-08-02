@@ -16,7 +16,7 @@
 // [RFC1321]       https://www.ietf.org/rfc/rfc1321.txt
 // [Ron Rivest]    https://people.csail.mit.edu/rivest/Md5.c
 // [md5-0.7.0]     https://docs.rs/md5/0.7.0/src/md5/lib.rs.html 
-priv struct MD5Context {
+struct MD5Context {
   state : FixedArray[UInt] // state 'a' 'b' 'c' 'd'
   count : FixedArray[UInt]
   buffer : Bytes
@@ -24,7 +24,18 @@ priv struct MD5Context {
 
 let padding : Bytes = Bytes::make(64, b'\x00')
 
-fn MD5Context::make() -> MD5Context {
+/// update the state of given context from new `data` 
+pub fn MD5Context::update(self : MD5Context, data : Bytes) -> Unit {
+  md5_update(self, data)
+}
+
+/// an alias of `MD5Context::compute()`
+pub fn MD5Context::finalize(self : MD5Context) -> Bytes {
+  self.compute()
+}
+
+/// Instantiate a MD5 context
+pub fn MD5Context::make() -> MD5Context {
   padding[0] = b'\x80'
   {
     state: [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476],
@@ -33,7 +44,8 @@ fn MD5Context::make() -> MD5Context {
   }
 }
 
-fn MD5Context::compute(self : MD5Context) -> Bytes {
+/// compute MD5 digest from given context
+pub fn MD5Context::compute(self : MD5Context) -> Bytes {
   let input = FixedArray::make(16, 0U)
   let idx = (self.count[0].lsr(3) & 0x3f).to_int()
   input[14] = self.count[0]
@@ -50,7 +62,7 @@ fn MD5Context::compute(self : MD5Context) -> Bytes {
   md5_update(self, bytes_slice)
   let mut j = 0
   for i = 0; i < 14; i = i + 1 {
-    input[i] = u8_to_u32(self.buffer, j)
+    input[i] = u8_to_u32le(self.buffer, i=j)
     j += 4
   }
   md5_transform(self.state, input)
@@ -89,12 +101,6 @@ fn MD5Context::i(x : UInt, y : UInt, z : UInt) -> UInt {
   y ^ (x | z.lnot())
 }
 
-fn u8_to_u32(x : Bytes, i : Int) -> UInt {
-  x[i].to_int().to_uint() | x[i + 1].to_int().to_uint().lsl(8) | x[i + 2].to_int().to_uint().lsl(
-    16,
-  ) | x[i + 3].to_int().to_uint().lsl(24)
-}
-
 fn md5_update(ctx : MD5Context, data : Bytes) -> Unit {
   let input = FixedArray::make(16, 0U)
   let mut idx = (ctx.count[0].lsr(3) & 0x3f).to_int()
@@ -111,17 +117,13 @@ fn md5_update(ctx : MD5Context, data : Bytes) -> Unit {
     if idx == 0x40 {
       let mut j = 0
       for k = 0; k < 16; k = k + 1 {
-        input[k] = u8_to_u32(ctx.buffer, j)
+        input[k] = u8_to_u32le(ctx.buffer, i=j)
         j += 4
       }
       md5_transform(ctx.state, input)
       idx = 0
     }
   }
-}
-
-fn rotate_left_u(x : UInt, n : Int) -> UInt {
-  x.lsl(n).lor(x.lsr(32 - n))
 }
 
 fn md5_transform(state : FixedArray[UInt], input : FixedArray[UInt]) -> Unit {
@@ -139,7 +141,7 @@ fn md5_transform(state : FixedArray[UInt], input : FixedArray[UInt]) -> Unit {
     s : Int, // calculate w/ floor(2^32 * |sin(i + 1)|) for i in 0..63
     ac : UInt
   ) -> Unit {
-    state_a.val = state_b.val + rotate_left_u(
+    state_a.val = state_b.val + urotate_left(
         state_a.val + op(state_b.val, state_c.val, state_d.val) + input[k] + ac,
         s,
       )
@@ -229,16 +231,28 @@ fn md5_transform(state : FixedArray[UInt], input : FixedArray[UInt]) -> Unit {
 /// Compute the MD5 digest of some `data` based on [RFC1321](https://www.ietf.org/rfc/rfc1321.txt).
 /// - Note that MD5 is considered _cryptographically broken_.
 /// Unless mandated, more secure alternatives should be preferred.
-pub fn md5(data : Bytes) -> Bytes {
+pub fn md5sum(data : Bytes) -> Bytes {
   let ctx = MD5Context::make()
   md5_update(ctx, data)
   ctx.compute()
 }
 
 test "md5_wb" {
-  let hash = md5("The quick brown fox jumps over the lazy dog".to_bytes())
+  let hash = md5sum("The quick brown fox jumps over the lazy dog".to_bytes())
   inspect!(
     bytes_to_hex_string(hash),
     content="b0986ae6ee1eefee8a4a399090126837",
   )
+}
+
+test {
+  let ctx = MD5Context::make()
+  md5_update(ctx, b"\x61")
+  md5_update(ctx, b"\x62")
+  md5_update(ctx, b"\x63")
+  let res1 = bytes_to_hex_string(ctx.compute())
+  let ctx = MD5Context::make()
+  md5_update(ctx, b"\x61\x62\x63")
+  let res2 = bytes_to_hex_string(ctx.compute())
+  @test.eq!(res1, res2)
 }

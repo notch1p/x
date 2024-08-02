@@ -13,7 +13,7 @@
 // limitations under the License.
 
 fn md5test(s : String) -> String {
-  bytes_to_hex_string(@crypto.md5(s.to_bytes()))
+  bytes_to_hex_string(@crypto.md5sum(s.to_bytes()))
 }
 
 test "md5_rfc1321" { // testsuites in RFC1321
@@ -42,11 +42,11 @@ test "md5_additional" { // Additional testsuites
     "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
   )
   inspect!(hash, content="28a4570fd742bc88258e159f8773d9c8")
-  let a = Array::make(1000, 0)
+  let a = Array::make(1000, b'\x00')
   for index = 0; index < 1000; index = index + 1 {
-    a[index] = index % 256
+    a[index] = (index % 256).to_byte()
   }
-  let hash = @crypto.md5(Bytes::from_array(a))
+  let hash = @crypto.md5sum(Bytes::from_array(a))
   inspect!(
     bytes_to_hex_string(hash),
     content="cbecbdb0fdd5cec1e242493b6008cc79",
